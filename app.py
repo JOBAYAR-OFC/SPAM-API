@@ -76,7 +76,7 @@ def send_requests():
     tokens_to_use = tokens_with_region[:100]
     batch_size = 3
     intra_batch_delay = 0.005
-    inter_batch_delay = 10
+    inter_batch_delay = 3
     
     total_requests_sent = 0
 
