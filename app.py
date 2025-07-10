@@ -86,7 +86,6 @@ def send_requests():
 
     # সর্বোচ্চ 100টি টোকেন ব্যবহার করুন
     tokens_to_use = tokens_with_region[:100]
-    batch_size = 3 # একবারে ৩টি রিকোয়েস্ট যাবে
     
     # মোট পাঠানো রিকোয়েস্ট ট্র্যাক করার জন্য একটি কাউন্টার
     total_requests_sent = 0
@@ -94,30 +93,30 @@ def send_requests():
     print("স্প্যাম ক্যাম্পেইন শুরু হচ্ছে...")
     print("---")
 
-    # ব্যাচ আকারে রিকোয়েস্ট পাঠান
-    for i in range(0, len(tokens_to_use), batch_size):
-        batch = tokens_to_use[i : i + batch_size]
-        batch_threads = []
+    # প্রতিটি টোকেনের জন্য আলাদাভাবে রিকোয়েস্ট পাঠান এবং বিরতি দিন
+    for region, token in tokens_to_use:
+        thread = threading.Thread(target=send_friend_request, args=(uid, region, token, results, results_lock))
+        thread.start()
+        total_requests_sent += 1 # রিকোয়েস্ট শুরু হওয়ার সাথে সাথে কাউন্ট করুন
 
-        for region, token in batch:
-            # থ্রেড তৈরি করার সময় লকটি 'send_friend_request' ফাংশনে পাস করা হয়েছে
-            thread = threading.Thread(target=send_friend_request, args=(uid, region, token, results, results_lock))
-            batch_threads.append(thread)
-            thread.start()
-            total_requests_sent += 1 # রিকোয়েস্ট শুরু হওয়ার সাথে সাথে কাউন্ট করুন
+        # প্রতিটি রিকোয়েস্ট শুরু হওয়ার পর ২ মিলিসেকেন্ড অপেক্ষা করুন
+        # শেষ রিকোয়েস্টের পর আর অপেক্ষা করার প্রয়োজন নেই
+        if total_requests_sent < len(tokens_to_use):
+            time.sleep(0.002) # 2 মিলিসেকেন্ড = 0.002 সেকেন্ড
 
-        # বর্তমান ব্যাচের সব থ্রেড শেষ না হওয়া পর্যন্ত অপেক্ষা করুন
-        for thread in batch_threads:
+        # এখানে থ্রেড.জয়েন() ব্যবহার করা হচ্ছে না কারণ আপনি চান রিকোয়েস্টগুলো দ্রুত পাঠানো হোক।
+        # তবে, সব থ্রেড শেষ না হওয়া পর্যন্ত মূল থ্রেড (ফ্লাস্ক রিকোয়েস্ট) চলতে থাকবে।
+        # যদি আপনি চান প্রতিটি রিকোয়েস্ট শেষ হওয়ার পরই কাউন্টার দেখতে,
+        # তাহলে এখানে `thread.join()` দিতে হবে, কিন্তু সেটা আপনার 'আসতেই থাকে আসতেই থাকে' চাহিদার বিপরীত।
+        # যেহেতু আপনি সম্পূর্ণ প্রক্রিয়া শেষে ফলাফল দেখতে চেয়েছেন, তাই আমরা এখানে অপেক্ষা করব না।
+        # আপনি যদি প্রতিটি রিকোয়েস্ট শেষ হওয়ার পর পর্যায়ক্রমিক কাউন্ট দেখতে চান, তবে আপনাকে এটি বিবেচনা করতে হবে।
+
+    # সব রিকোয়েস্ট শুরু হওয়ার পর, সব থ্রেড শেষ না হওয়া পর্যন্ত অপেক্ষা করুন
+    # এটি নিশ্চিত করে যে সব রিকোয়েস্ট শেষ হওয়ার পরই চূড়ান্ত ফলাফল ফেরত দেওয়া হয়।
+    for thread in threading.enumerate():
+        if thread is not threading.current_thread():
             thread.join()
 
-        # বর্তমান ব্যাচের অবস্থা প্রিন্ট করুন
-        # ফলাফলের সঠিক মান প্রিন্ট করার জন্য লক ব্যবহার করুন
-        with results_lock:
-            print(f"বর্তমান সফল রিকোয়েস্ট: {results['success']}, ব্যর্থ রিকোয়েস্ট: {results['failed']}, মোট পাঠানো রিকোয়েস্ট: {total_requests_sent}")
-
-        # যদি আরও টোকেন পাঠানোর থাকে, তবে ১ মিলিসেকেন্ড অপেক্ষা করুন
-        if total_requests_sent < len(tokens_to_use):
-            time.sleep(0.001) # 1 মিলিসেকেন্ড = 0.001 সেকেন্ড
 
     print("---")
     print(f"সম্পূর্ণ ক্যাম্পেইন শেষ হয়েছে।")
