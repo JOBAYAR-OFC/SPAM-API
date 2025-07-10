@@ -86,46 +86,37 @@ def send_requests():
 
     # সর্বোচ্চ 100টি টোকেন ব্যবহার করুন
     tokens_to_use = tokens_with_region[:100]
-    batch_size = 3 # একবারে ৩টি রিকোয়েস্ট যাবে
-    intra_batch_delay = 0.010 # 10 মিলিসেকেন্ড = 0.010 সেকেন্ড (প্রতিটি রিকোয়েস্টের মাঝে)
-    inter_batch_delay = 0.050 # 50 মিলিসেকেন্ড = 0.050 সেকেন্ড (প্রতি ৩টি রিকোয়েস্ট পাঠানোর পর)
     
-    # মোট পাঠানো রিকোয়েস্ট ট্র্যাক করার জন্য একটি কাউন্টার
+    # মোট পাঠানো রিকোয়েস্ট ট্র্যাক করার জন্য একটি কাউন্টার
     total_requests_sent = 0
 
     print("স্প্যাম ক্যাম্পেইন শুরু হচ্ছে...")
     print("---")
 
-    # ব্যাচ আকারে রিকোয়েস্ট পাঠান
-    for i in range(0, len(tokens_to_use), batch_size):
-        batch = tokens_to_use[i : i + batch_size]
-        current_batch_threads = []
+    # প্রতিটি টোকেনের জন্য আলাদাভাবে রিকোয়েস্ট পাঠান এবং ১ সেকেন্ড বিরতি দিন
+    for i, (region, token) in enumerate(tokens_to_use):
+        thread = threading.Thread(target=send_friend_request, args=(uid, region, token, results, results_lock))
+        thread.start()
+        total_requests_sent += 1 # রিকোয়েস্ট শুরু হওয়ার সাথে সাথে কাউন্ট করুন
 
-        for j, (region, token) in enumerate(batch):
-            thread = threading.Thread(target=send_friend_request, args=(uid, region, token, results, results_lock))
-            current_batch_threads.append(thread)
-            thread.start()
-            total_requests_sent += 1 # রিকোয়েস্ট শুরু হওয়ার সাথে সাথে কাউন্ট করুন
-            
-            # প্রতিটি রিকোয়েস্ট শুরু হওয়ার পর intra-batch delay দিন (যদি ব্যাচের শেষ রিকোয়েস্ট না হয়)
-            if j < len(batch) - 1:
-                time.sleep(intra_batch_delay)
+        # প্রতিটি রিকোয়েস্ট শুরু হওয়ার পর ১ সেকেন্ড অপেক্ষা করুন
+        # শেষ রিকোয়েস্টের পর আর অপেক্ষা করার প্রয়োজন নেই
+        if i < len(tokens_to_use) - 1:
+            time.sleep(1) # 1 সেকেন্ড অপেক্ষা করুন
 
-        # বর্তমান ব্যাচের সব থ্রেড শেষ না হওয়া পর্যন্ত অপেক্ষা করুন
-        for thread in current_batch_threads:
+        # বর্তমান অবস্থা প্রিন্ট করুন (ঐচ্ছিক, তবে অগ্রগতি দেখতে সহায়ক)
+        with results_lock:
+            print(f"পাঠানো হয়েছে: {total_requests_sent}/{len(tokens_to_use)}, সফল: {results['success']}, ব্যর্থ: {results['failed']}")
+
+
+    # সব রিকোয়েস্ট শুরু হওয়ার পর, সব থ্রেড শেষ না হওয়া পর্যন্ত অপেক্ষা করুন
+    # এটি নিশ্চিত করে যে সব রিকোয়েস্ট শেষ হওয়ার পরই চূড়ান্ত ফলাফল ফেরত দেওয়া হয়।
+    for thread in threading.enumerate():
+        if thread is not threading.current_thread():
             thread.join()
 
-        # বর্তমান ব্যাচের অবস্থা প্রিন্ট করুন
-        # ফলাফলের সঠিক মান প্রিন্ট করার জন্য লক ব্যবহার করুন
-        with results_lock:
-            print(f"বর্তমান সফল রিকোয়েস্ট: {results['success']}, ব্যর্থ রিকোয়েস্ট: {results['failed']}, মোট পাঠানো রিকোয়েস্ট: {total_requests_sent}")
-
-        # যদি আরও টোকেন পাঠানোর থাকে, তবে inter-batch delay দিন
-        if total_requests_sent < len(tokens_to_use):
-            time.sleep(inter_batch_delay)
-
     print("---")
-    print(f"সম্পূর্ণ ক্যাম্পেইন শেষ হয়েছে।")
+    print(f"সম্পূর্ণ ক্যাম্পেইন শেষ হয়েছে।")
 
     status = 1 if results["success"] != 0 else 2
 
@@ -133,7 +124,7 @@ def send_requests():
         "success_count": results["success"],
         "failed_count": results["failed"],
         "status": status,
-        "total_requests_sent": total_requests_sent, # মোট পাঠানো রিকোয়েস্ট ফলাফলে যোগ করা হয়েছে
+        "total_requests_sent": total_requests_sent, # মোট পাঠানো রিকোয়েস্ট ফলাফলে যোগ করা হয়েছে
         "telegram_channel": "@GHOST_XMOD",
         "Contact_Developer": "@JOBAYAR_AHMED"
     })
