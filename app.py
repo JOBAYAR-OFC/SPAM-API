@@ -2,13 +2,15 @@ from flask import Flask, request, jsonify
 import requests
 import json
 import threading
-import time # সময় বিরতির জন্য নতুন করে যোগ করা হয়েছে
-from byte import Encrypt_ID, encrypt_api  # নিশ্চিত করুন এটি সঠিকভাবে ইমপ্লিমেন্ট করা আছে
+import time # সময় বিরতির জন্য যোগ করা হয়েছে
+
+# নিশ্চিত করুন এই মডিউলটি সঠিকভাবে ইমপ্লিমেন্ট করা আছে
+from byte import Encrypt_ID, encrypt_api
 
 app = Flask(__name__)
 
 # Define the list of regions
-regions = ["bd"]  # প্রয়োজনে "sg", "br", ইত্যাদি যোগ করুন
+regions = ["bd"]  # আপনার প্রয়োজন অনুযায়ী "sg", "br", ইত্যাদি যোগ করতে পারেন
 
 # Load tokens for all regions
 def load_tokens():
@@ -26,7 +28,7 @@ def load_tokens():
     return all_tokens
 
 # Function to send one friend request
-# থ্রেড সেফ ফলাফলের জন্য 'results' ডিকশনারিকে একটি লক দিয়ে সুরক্ষিত করা হয়েছে
+# 'results' ডিকশনারিতে থ্রেড-সেফ অ্যাক্সেসের জন্য 'lock' প্যারামিটার যোগ করা হয়েছে
 def send_friend_request(uid, region, token, results, lock):
     encrypted_id = Encrypt_ID(uid)
     payload = f"08a7c4839f1e10{encrypted_id}1801"
@@ -84,7 +86,9 @@ def send_requests():
 
     # সর্বোচ্চ 100টি টোকেন ব্যবহার করুন
     tokens_to_use = tokens_with_region[:100]
-    batch_size = 3
+    batch_size = 3 # একবারে ৩টি রিকোয়েস্ট যাবে
+    
+    # মোট পাঠানো রিকোয়েস্ট ট্র্যাক করার জন্য একটি কাউন্টার
     total_requests_sent = 0
 
     print("স্প্যাম ক্যাম্পেইন শুরু হচ্ছে...")
@@ -96,6 +100,7 @@ def send_requests():
         batch_threads = []
 
         for region, token in batch:
+            # থ্রেড তৈরি করার সময় লকটি 'send_friend_request' ফাংশনে পাস করা হয়েছে
             thread = threading.Thread(target=send_friend_request, args=(uid, region, token, results, results_lock))
             batch_threads.append(thread)
             thread.start()
@@ -106,7 +111,8 @@ def send_requests():
             thread.join()
 
         # বর্তমান ব্যাচের অবস্থা প্রিন্ট করুন
-        with results_lock: # ফলাফলের সঠিক মান প্রিন্ট করার জন্য লক ব্যবহার করুন
+        # ফলাফলের সঠিক মান প্রিন্ট করার জন্য লক ব্যবহার করুন
+        with results_lock:
             print(f"বর্তমান সফল রিকোয়েস্ট: {results['success']}, ব্যর্থ রিকোয়েস্ট: {results['failed']}, মোট পাঠানো রিকোয়েস্ট: {total_requests_sent}")
 
         # যদি আরও টোকেন পাঠানোর থাকে, তবে ১ মিলিসেকেন্ড অপেক্ষা করুন
@@ -122,41 +128,12 @@ def send_requests():
         "success_count": results["success"],
         "failed_count": results["failed"],
         "status": status,
-        "total_requests_sent": total_requests_sent, # মোট পাঠানো রিকোয়েস্ট যোগ করা হয়েছে
+        "total_requests_sent": total_requests_sent, # মোট পাঠানো রিকোয়েস্ট ফলাফলে যোগ করা হয়েছে
         "telegram_channel": "@GHOST_XMOD",
         "Contact_Developer": "@JOBAYAR_AHMED"
     })
 
 # Run Flask app
 if __name__ == "__main__":
-    # debug=True প্রোডাকশন এনভায়রনমেন্টের জন্য সুপারিশ করা হয় না
-    app.run(debug=True, host="0.0.0.0", port=5009)
-    tokens_with_region = load_tokens()
-    if not tokens_with_region:
-        return jsonify({"error": "No tokens found in any token file"}), 500
-
-    results = {"success": 0, "failed": 0}
-    threads = []
-
-    # Send using up to 100 tokens
-    for region, token in tokens_with_region[:100]:
-        thread = threading.Thread(target=send_friend_request, args=(uid, region, token, results))
-        threads.append(thread)
-        thread.start()
-
-    for thread in threads:
-        thread.join()
-
-    status = 1 if results["success"] != 0 else 2
-
-    return jsonify({
-    "success_count": results["success"],
-    "failed_count": results["failed"],
-    "status": status,
-    "telegram_channel": "@GHOST_XMOD",
-    "Contact_Developer": "@JOBAYAR_AHMED"
-})
-
-# Run Flask app
-if __name__ == "__main__":
+    # debug=True ডেভেলপমেন্টের জন্য ভালো, কিন্তু প্রোডাকশন এনভায়রনমেন্টের জন্য সুপারিশ করা হয় না
     app.run(debug=True, host="0.0.0.0", port=5009)
