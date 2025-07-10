@@ -2,11 +2,11 @@ from flask import Flask, request, jsonify
 import requests
 import json
 import time
+import threading
 
 from byte import Encrypt_ID, encrypt_api
 
 app = Flask(__name__)
-
 regions = ["bd"]
 
 def load_tokens():
@@ -22,7 +22,7 @@ def load_tokens():
             print(f"Error loading tokens from {file_name}: {e}")
     return all_tokens
 
-def send_friend_request(uid, region, token):
+def send_friend_request(uid, region, token, results, lock):
     encrypted_id = Encrypt_ID(uid)
     payload = f"08a7c4839f1e10{encrypted_id}1801"
     encrypted_payload = encrypt_api(payload)
@@ -44,58 +44,92 @@ def send_friend_request(uid, region, token):
 
     try:
         response = requests.post(url, headers=headers, data=bytes.fromhex(encrypted_payload))
-        if response.status_code == 200:
-            print(f"✅ Success: Request sent from token ({token[:10]}...)")
-            return True
-        else:
-            print(f"❌ Failed: Token ({token[:10]}...) | Status: {response.status_code}")
-            return False
+        with lock:
+            if response.status_code == 200:
+                results["success"] += 1
+            else:
+                results["failed"] += 1
     except Exception as e:
-        print(f"❌ Error sending request with token ({token[:10]}...): {e}")
-        return False
+        with lock:
+            print(f"❌ Error sending request with token ({token[:10]}...): {e}")
+            results["failed"] += 1
 
 @app.route("/spam", methods=["GET"])
 def spam_requests():
     uid = request.args.get("uid")
+    amount = request.args.get("amount", type=int)
     key = request.args.get("key")
 
     if key != "GST_MODX":
         return jsonify({"error": "Invalid API Key"}), 403
-
     if not uid:
         return jsonify({"error": "Missing UID"}), 400
+    if not amount or amount <= 0:
+        return jsonify({"error": "Amount must be a positive number"}), 400
 
     tokens_with_region = load_tokens()
     if not tokens_with_region:
         return jsonify({"error": "No tokens found"}), 500
 
-    success_count = 0
-    fail_count = 0
+    token_count = len(tokens_with_region)
+
+    if amount > token_count:
+        return jsonify({
+            "error": "Not enough tokens",
+            "tokens_available": token_count,
+            "requested": amount,
+            "max_possible": token_count
+        }), 400
+
+    # কাজের জন্য কাটা টোকেন
+    usable_tokens = tokens_with_region[:amount]
+
+    results = {"success": 0, "failed": 0}
+    results_lock = threading.Lock()
+
+    print(f"🚀 ক্যাম্পেইন শুরু হচ্ছে {amount} রিকুয়েস্ট পাঠানোর জন্য...")
+
+    batch_size = 3
+    intra_delay = 0.05  # ৫০ মিলিসেকেন্ড
+    inter_delay = 15  # ব্যাচ শেষে ১৫ সেকেন্ড
+
     total_sent = 0
 
-    print("🚀 স্প্যাম অপারেশন শুরু হয়েছে!")
+    for i in range(0, len(usable_tokens), batch_size):
+        batch = usable_tokens[i:i + batch_size]
+        threads = []
 
-    for region, token in tokens_with_region:
-        ok = send_friend_request(uid, region, token)
-        if ok:
-            success_count += 1
-        else:
-            fail_count += 1
-        total_sent += 1
+        for j, (region, token) in enumerate(batch):
+            thread = threading.Thread(
+                target=send_friend_request,
+                args=(uid, region, token, results, results_lock)
+            )
+            threads.append(thread)
+            thread.start()
+            total_sent += 1
+            if j < len(batch) - 1:
+                time.sleep(intra_delay)  # ৫০ms delay
 
-        time.sleep(1.2)  # Detection এড়ানোর জন্য safe delay
+        for thread in threads:
+            thread.join()
 
-    print("✅ সম্পূর্ণ স্প্যাম শেষ!")
+        print(f"📨 ব্যাচ শেষ: সফল={results['success']} ব্যর্থ={results['failed']} মোট={total_sent}")
+
+        if total_sent < amount:
+            print(f"⏳ ১৫ সেকেন্ড অপেক্ষা করা হচ্ছে পরবর্তী ব্যাচের জন্য...")
+            time.sleep(inter_delay)
+
+    print("🎉 স্প্যাম ক্যাম্পেইন সম্পূর্ণ!")
 
     return jsonify({
-        "success_count": success_count,
-        "failed_count": fail_count,
-        "total_requests_sent": total_sent,
-        "uid": uid,
-        "status": 1 if success_count > 0 else 2,
-        "note": "All requests sent one-by-one to avoid detection & force notification delivery.",
-        "Telegram": "@GHOST_XMOD",
-        "Developer": "@JOBAYAR_AHMED"
+        "requested": amount,
+        "success": results["success"],
+        "failed": results["failed"],
+        "tokens_used": total_sent,
+        "status": 1 if results["success"] > 0 else 2,
+        "note": "Request sent in 3-batch, 50ms intra-delay, 15s inter-batch for anti-detect",
+        "telegram": "@GHOST_XMOD",
+        "developer": "@JOBAYAR_AHMED"
     })
 
 if __name__ == "__main__":
