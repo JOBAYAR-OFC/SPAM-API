@@ -91,7 +91,7 @@ def spam_requests():
 
     batch_size = 3
     intra_delay = 0.05  # ৫০ মিলিসেকেন্ড
-    inter_delay = 15  # ব্যাচ শেষে ১৫ সেকেন্ড
+    inter_delay = 20  # ব্যাচ শেষে ১৫ সেকেন্ড
 
     total_sent = 0
 
