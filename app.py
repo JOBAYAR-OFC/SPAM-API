@@ -55,7 +55,7 @@ def send_friend_request(uid, region, token, results):
         results["failed"] += 1
 
 # API endpoint with API key check
-@app.route("/spam-jenil", methods=["GET"])
+@app.route("/spam", methods=["GET"])
 def send_requests():
     uid = request.args.get("uid")
     key = request.args.get("key")
