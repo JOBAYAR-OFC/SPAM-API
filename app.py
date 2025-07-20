@@ -1,133 +1,110 @@
 from flask import Flask, request, jsonify
-import requests
-import json
-import time
-import threading
-
+import requests, json, threading, time
 from byte import Encrypt_ID, encrypt_api
 
 app = Flask(__name__)
 regions = ["bd"]
 
-def load_tokens():
-    all_tokens = []
-    for region in regions:
-        file_name = f"token_{region}.json"
-        try:
-            with open(file_name, "r", encoding="utf-8") as file:
-                data = json.load(file)
-            for item in data:
-                token = item.get("token")
-                if token:
-                    all_tokens.append((region, token))
-        except Exception as e:
-            print(f"[TOKEN ERROR] {file_name} - {e}")
-    return all_tokens
+# 🔁 Auto Update Tokens Every 7 Hours
+def update_tokens():
+    while True:
+        for region in regions:
+            try:
+                with open(f"accounts_{region}.json", "r") as file:
+                    accounts = json.load(file)
 
-def send_friend_request(uid, region, token, results, lock):
+                new_tokens = []
+                for acc in accounts:
+                    uid = acc["uid"]
+                    password = acc["password"]
+                    api_url = f"https://jwt-maker-ff.vercel.app/token?uid={uid}&password={password}"
+                    try:
+                        res = requests.get(api_url, timeout=10)
+                        res_json = res.json()
+                        if "token" in res_json:
+                            new_tokens.append({"uid": uid, "token": res_json["token"]})
+                    except Exception as e:
+                        print(f"Token fetch failed for {uid}: {e}")
+
+                with open(f"token_{region}.json", "w") as file:
+                    json.dump(new_tokens, file, indent=4)
+
+                print(f"[{region}] ✅ Tokens updated successfully")
+
+            except Exception as e:
+                print(f"Error updating tokens for {region}: {e}")
+
+        # Wait 7 hours (25200 seconds)
+        time.sleep(25200)
+
+# Start token auto-updater in background
+threading.Thread(target=update_tokens, daemon=True).start()
+
+# 📤 Friend Request Sender
+def send_friend_request(uid, region, token, results):
+    encrypted_id = Encrypt_ID(uid)
+    payload = f"08a7c4839f1e10{encrypted_id}1801"
+    encrypted_payload = encrypt_api(payload)
+
+    url = f"https://clientbp.ggblueshark.com/RequestAddingFriend"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "X-Unity-Version": "2018.4.11f1",
+        "Content-Type": "application/x-www-form-urlencoded",
+        "User-Agent": "Dalvik/2.1.0 (Linux; Android 9)",
+    }
+
     try:
-        encrypted_id = Encrypt_ID(uid)
-        payload = f"08a7c4839f1e10{encrypted_id}1801"
-        encrypted_payload = encrypt_api(payload)
-
-        url = "https://clientbp.ggblueshark.com/RequestAddingFriend"
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "X-Unity-Version": "2018.4.11f1",
-            "X-GA": "v1 1",
-            "ReleaseVersion": "OB49",
-            "Content-Type": "application/x-www-form-urlencoded",
-            "User-Agent": "Dalvik/2.1.0 (Linux; U; Android 9; SM-N975F Build/PI)",
-            "Host": "clientbp.ggblueshark.com",
-            "Connection": "close",
-            "Accept-Encoding": "gzip, deflate, br"
-        }
-
-        response = requests.post(url, headers=headers, data=bytes.fromhex(encrypted_payload), timeout=10)
-        with lock:
-            if response.status_code == 200:
-                results["success"] += 1
-            else:
-                print(f"[❌] Failed: HTTP {response.status_code} | Token: {token[:10]}...")
-                results["failed"] += 1
-    except Exception as e:
-        with lock:
-            print(f"[⚠️] Error for Token: {token[:10]}... | {str(e)}")
+        res = requests.post(url, headers=headers, data=bytes.fromhex(encrypted_payload))
+        if res.status_code == 200:
+            results["success"] += 1
+        else:
             results["failed"] += 1
+    except:
+        results["failed"] += 1
 
+# 🌐 /spam API Endpoint
 @app.route("/spam", methods=["GET"])
-def spam_requests():
+def spam():
     uid = request.args.get("uid")
-    amount = request.args.get("amount", type=int)
     key = request.args.get("key")
 
     if key != "GST_MODX":
-        return jsonify({"error": "Invalid API Key"}), 403
+        return jsonify({"error": "Invalid or missing API key 🔑"}), 403
     if not uid:
-        return jsonify({"error": "Missing UID"}), 400
-    if not amount or amount <= 0:
-        return jsonify({"error": "Amount must be a positive number"}), 400
+        return jsonify({"error": "uid parameter is required"}), 400
 
-    tokens_with_region = load_tokens()
+    tokens_with_region = []
+    for region in regions:
+        try:
+            with open(f"token_{region}.json", "r") as file:
+                data = json.load(file)
+            tokens = [(region, item["token"]) for item in data]
+            tokens_with_region.extend(tokens)
+        except:
+            continue
+
     if not tokens_with_region:
-        return jsonify({"error": "No tokens found"}), 500
-
-    token_count = len(tokens_with_region)
-
-    if amount > token_count:
-        return jsonify({
-            "error": "Not enough tokens",
-            "tokens_available": token_count,
-            "requested": amount,
-            "max_possible": token_count
-        }), 400
-
-    usable_tokens = tokens_with_region[:amount]
+        return jsonify({"error": "No tokens found in any token file"}), 500
 
     results = {"success": 0, "failed": 0}
-    results_lock = threading.Lock()
+    threads = []
 
-    print(f"🚀 শুরু হয়েছে {amount} রিকুয়েস্ট পাঠানো!")
+    for region, token in tokens_with_region[:100]:
+        thread = threading.Thread(target=send_friend_request, args=(uid, region, token, results))
+        threads.append(thread)
+        thread.start()
 
-    batch_size = 3
-    intra_delay = 0.05
-    inter_delay = 20
-    total_sent = 0
+    for thread in threads:
+        thread.join()
 
-    for i in range(0, len(usable_tokens), batch_size):
-        batch = usable_tokens[i:i + batch_size]
-        threads = []
-
-        for j, (region, token) in enumerate(batch):
-            thread = threading.Thread(
-                target=send_friend_request,
-                args=(uid, region, token, results, results_lock)
-            )
-            threads.append(thread)
-            thread.start()
-            total_sent += 1
-            if j < len(batch) - 1:
-                time.sleep(intra_delay)
-
-        for thread in threads:
-            thread.join()
-
-        print(f"📨 ব্যাচ শেষ: সফল={results['success']} ব্যর্থ={results['failed']} মোট={total_sent}")
-        if total_sent < amount:
-            print("⏳ ১৫ সেকেন্ড অপেক্ষা করা হচ্ছে...")
-            time.sleep(inter_delay)
-
-    print("🎉 স্প্যাম ক্যাম্পেইন সম্পূর্ণ!")
-
+    status = 1 if results["success"] != 0 else 2
     return jsonify({
-        "requested": amount,
-        "success": results["success"],
-        "failed": results["failed"],
-        "tokens_used": total_sent,
-        "status": 1 if results["success"] > 0 else 2,
-        "note": "Sent in 3-batch, 50ms intra-delay, 15s inter-batch",
-        "telegram": "@GHOST_XMOD",
-        "developer": "@JOBAYAR_AHMED"
+        "success_count": results["success"],
+        "failed_count": results["failed"],
+        "status": status,
+        "telegram_channel": "@GHOST_XAPIS",
+        "Contact_Developer": "@JOBAYAR_AHMED"
     })
 
 if __name__ == "__main__":
