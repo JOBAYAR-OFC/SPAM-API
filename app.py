@@ -37,9 +37,8 @@ def send_friend_request(uid, region, token, results):
         "X-GA": "v1 1",
         "ReleaseVersion": "OB49",
         "Content-Type": "application/x-www-form-urlencoded",
-        "Content-Length": "16",
         "User-Agent": "Dalvik/2.1.0 (Linux; U; Android 9; SM-N975F Build/PI)",
-        "Host": f"clientbp.ggblueshark.com",
+        "Host": "clientbp.ggblueshark.com",
         "Connection": "close",
         "Accept-Encoding": "gzip, deflate, br"
     }
@@ -54,21 +53,17 @@ def send_friend_request(uid, region, token, results):
         print(f"Error sending request for region {region} with token {token}: {e}")
         results["failed"] += 1
 
-# API endpoint with API key check
-@app.route("/spam", methods=["GET"])
+# API endpoint: /send_requests?uid={player_id}
+@app.route("/send_requests", methods=["GET"])
 def send_requests():
     uid = request.args.get("uid")
-    key = request.args.get("key")
-
-    if key != "GST_MODX":
-        return jsonify({"error": "Invalid or missing API key 🔑"}), 403
 
     if not uid:
-        return jsonify({"error": "uid parameter is required"}), 400
+        return jsonify({"error": "❌ uid parameter is required"}), 400
 
     tokens_with_region = load_tokens()
     if not tokens_with_region:
-        return jsonify({"error": "No tokens found in any token file"}), 500
+        return jsonify({"error": "❌ No tokens found in any token file"}), 500
 
     results = {"success": 0, "failed": 0}
     threads = []
@@ -85,13 +80,15 @@ def send_requests():
     status = 1 if results["success"] != 0 else 2
 
     return jsonify({
-    "success_count": results["success"],
-    "failed_count": results["failed"],
-    "status": status,
-    "telegram_channel": "@GHOST_XAPIS",
-    "Contact_Developer": "@JOBAYAR_AHMED"
-})
+        "success_count": results["success"],
+        "failed_count": results["failed"],
+        "status": status,
+        "uid": uid,
+        "message": "✅ Friend request sent using available tokens",
+        "telegram_channel": "@GHOST_XAPIS",
+        "Contact_Developer": "@JOBAYAR_AHMED"
+    })
 
 # Run Flask app
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=5009)
+    app.run(debug=True, host="0.0.0.0", port=5002)
