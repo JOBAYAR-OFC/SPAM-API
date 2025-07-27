@@ -2,12 +2,40 @@ from flask import Flask, request, jsonify
 import requests
 import json
 import threading
-from byte import Encrypt_ID, encrypt_api  # Make sure this is correctly implemented
+import time
+from Crypto.Cipher import AES
+from Crypto.Util.Padding import pad
+import binascii
 
 app = Flask(__name__)
 
 # Define the list of regions
 regions = ["bd"]  # Add more like "sg", "br", etc., if needed
+
+# Encryption functions needed from your script
+def encrypt_api(plain_text):
+    plain_text = bytes.fromhex(plain_text)
+    key = bytes([89, 103, 38, 116, 99, 37, 68, 69, 117, 104, 54, 37, 90, 99, 94, 56])
+    iv = bytes([54, 111, 121, 90, 68, 114, 50, 50, 69, 51, 121, 99, 104, 106, 77, 37])
+    cipher = AES.new(key, AES.MODE_CBC, iv)
+    cipher_text = cipher.encrypt(pad(plain_text, AES.block_size))
+    return cipher_text.hex()
+
+def Encrypt_ID(number):
+    try:
+        number = int(number)
+        encoded_bytes = []
+        while True:
+            byte = number & 0x7F
+            number >>= 7
+            if number:
+                byte |= 0x80
+            encoded_bytes.append(byte)
+            if not number:
+                break
+        return ''.join([f'{b:02x}' for b in encoded_bytes])
+    except:
+        return ""
 
 # Load tokens for all regions
 def load_tokens():
@@ -73,6 +101,7 @@ def send_requests():
         thread = threading.Thread(target=send_friend_request, args=(uid, region, token, results))
         threads.append(thread)
         thread.start()
+        time.sleep(0.1)  # Small delay to avoid rate limiting
 
     for thread in threads:
         thread.join()
@@ -89,6 +118,11 @@ def send_requests():
         "Contact_Developer": "@JOBAYAR_AHMED"
     })
 
+# Health check endpoint
+@app.route("/health", methods=["GET"])
+def health_check():
+    return jsonify({"status": "healthy", "version": "1.0"})
+
 # Run Flask app
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=5002)
+    app.run(host="0.0.0.0", port=5002)
