@@ -12,7 +12,7 @@ app = Flask(__name__)
 # Define the list of regions
 regions = ["bd"]  # Add more like "sg", "br", etc., if needed
 
-# Encryption functions needed from your script
+# Encryption functions
 def encrypt_api(plain_text):
     plain_text = bytes.fromhex(plain_text)
     key = bytes([89, 103, 38, 116, 99, 37, 68, 69, 117, 104, 54, 37, 90, 99, 94, 56])
@@ -95,14 +95,20 @@ def send_requests():
 
     results = {"success": 0, "failed": 0}
     threads = []
+    MAX_THREADS = 50  # Maximum concurrent threads
+    DELAY_BETWEEN_REQUESTS = 0.2  # Delay in seconds
 
-    # Send using up to 100 tokens
-    for region, token in tokens_with_region[:100]:
+    for region, token in tokens_with_region:
+        # Wait if too many active threads
+        while threading.active_count() > MAX_THREADS:
+            time.sleep(0.1)
+        
         thread = threading.Thread(target=send_friend_request, args=(uid, region, token, results))
-        threads.append(thread)
         thread.start()
-        time.sleep(0.1)  # Small delay to avoid rate limiting
+        threads.append(thread)
+        time.sleep(DELAY_BETWEEN_REQUESTS)  # Rate limiting
 
+    # Wait for all threads to complete
     for thread in threads:
         thread.join()
 
@@ -113,7 +119,7 @@ def send_requests():
         "failed_count": results["failed"],
         "status": status,
         "uid": uid,
-        "message": "✅ Friend request sent using available tokens",
+        "message": f"✅ Friend requests sent using {len(tokens_with_region)} tokens",
         "telegram_channel": "@GHOST_XAPIS",
         "Contact_Developer": "@JOBAYAR_AHMED"
     })
