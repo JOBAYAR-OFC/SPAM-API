@@ -82,7 +82,7 @@ def send_friend_request(uid, region, token, results):
         "Authorization": f"Bearer {token}",
         "X-Unity-Version": "2018.4.11f1",
         "X-GA": "v1 1",
-        "ReleaseVersion": "OB50",
+        "ReleaseVersion": "OB51",
         "Content-Type": "application/x-www-form-urlencoded",
         "User-Agent": "Dalvik/2.1.0 (Linux; U; Android 9; SM-N975F Build/PI)",
         "Host": url.split("//")[1].split("/")[0],
@@ -170,4 +170,4 @@ def health_check():
 
 # Run Flask app
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5002)
+    app.run(host="0.0.0.0", port=100)
